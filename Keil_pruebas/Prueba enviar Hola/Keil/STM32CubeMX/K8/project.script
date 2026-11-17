@@ -1,0 +1,5 @@
+load STM32F303K8Tx
+project name STM32CubeMX
+project toolchain "MDK-ARM V5"
+project path "C:\Users\marti\OneDrive\Desktop\Martin\Proyectos\ProyectoFinal\STM32CubeMX\K8"
+SetCopyLibrary "copy only"

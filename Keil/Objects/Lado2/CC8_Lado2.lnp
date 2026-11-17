@@ -1,0 +1,11 @@
+--cpu=Cortex-M4.fp.sp
+".\objects\lado2\main.o"
+".\objects\lado2\chat_com.o"
+".\objects\lado2\phy_codec.o"
+".\objects\lado2\phy_link.o"
+".\objects\lado2\sound.o"
+".\objects\lado2\startup_stm32f303x8.o"
+".\objects\lado2\system_stm32f3xx.o"
+--ro-base 0x08000000 --entry 0x08000000 --rw-base 0x20000000 --entry Reset_Handler --first __Vectors --strict --summary_stderr --info summarysizes --map --load_addr_map_info --xref --callgraph --symbols
+--info sizes --info totals --info unused --info veneers
+--list ".\Listings\CC8_Lado2.map" -o .\Objects\Lado2\CC8_Lado2.axf

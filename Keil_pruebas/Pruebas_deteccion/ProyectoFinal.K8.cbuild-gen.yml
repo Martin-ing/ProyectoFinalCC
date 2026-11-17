@@ -1,0 +1,72 @@
+build-gen:
+  board: 
+  compiler: AC6
+  device: STM32F303K8Tx
+  generated-by: uVision version 5.43.1.0
+  processor:
+    core: Cortex-M4
+    dsp: on
+    endian: little
+    fpu: sp
+  add-path: 
+  components:
+    - component: ARM::CMSIS:CORE@6.2.0
+      from-pack: ARM::CMSIS@6.3.0
+    - component: Keil::Device:CubeMX@1.0.0
+      from-pack: Keil::STM32F3xx_DFP@3.1.0
+  apis: 
+  groups:
+    - group: Source
+      files:
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/main.c
+          category: sourceC
+    - group: Drivers
+      files:
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Nokia5110.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Nokia5110.h
+          category: header
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/USART1.h
+          category: header
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/USART1.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/i2c_expander.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/i2c_expander.h
+          category: header
+    - group: ComandosVerdes
+      files:
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/RGB.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Verdes.h
+          category: header
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/lcd.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/pot.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/sound.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/vout.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/segment.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/lcdwatch.c
+          category: sourceC
+    - group: ComandosRojos
+      files:
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Arcade.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Arcade.h
+          category: header
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Bola.c
+          category: sourceC
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/Keypad.c
+          category: sourceC
+    - group: ComandosAmarillos
+      files:
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/functions.s
+          category: sourceAsm
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/functionsc.h
+          category: header
+        - file: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/verifications.h
+          category: header

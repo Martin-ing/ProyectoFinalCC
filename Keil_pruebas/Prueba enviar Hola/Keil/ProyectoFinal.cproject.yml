@@ -1,0 +1,84 @@
+project:
+  packs:
+    - pack: ARM::CMSIS@^6.3.0
+    - pack: Keil::STM32F3xx_DFP@^2.2.2
+    - pack: ARM::CMSIS-NN@^4.0.0
+    - pack: ARM::CMSIS-DSP@^1.10.1
+  setups:
+    - setup: Options for K8
+      processor:
+        fpu: sp
+      debug: "on"
+      misc:
+        - C:
+            - -std=c99
+          C-CPP:
+            - -fno-rtti
+            - -funsigned-char
+            - -fshort-enums
+            - -fshort-wchar
+            - -ffunction-sections
+            - -Wall
+            - -Wextra
+            - -Wno-packed
+            - -Wno-reserved-id-macro
+            - -Wno-unused-macros
+            - -Wno-documentation-unknown-command
+            - -Wno-documentation
+            - -Wno-license-management
+            - -Wno-parentheses-equality
+          CPP:
+            - -xc++
+            - -std=c++11
+            - -fno-exceptions
+          ASM:
+            - -masm=auto
+          Link:
+            - --map
+            - --load_addr_map_info
+            - --xref
+            - --callgraph
+            - --symbols
+            - --info sizes
+            - --info totals
+            - --info unused
+            - --info veneers
+            - --strict
+            - --summary_stderr
+            - --info summarysizes
+  groups:
+    - group: Source
+      files:
+        - file: main.c
+    - group: Drivers
+      files:
+        - file: Nokia5110.c
+        - file: Nokia5110.h
+        - file: USART1.h
+        - file: USART1.c
+        - file: i2c_expander.c
+        - file: i2c_expander.h
+    - group: ComandosVerdes
+      files:
+        - file: RGB.c
+        - file: Verdes.h
+        - file: lcd.c
+        - file: pot.c
+        - file: sound.c
+        - file: vout.c
+        - file: segment.c
+        - file: lcdwatch.c
+    - group: ComandosRojos
+      files:
+        - file: Arcade.c
+        - file: Arcade.h
+        - file: Bola.c
+        - file: Keypad.c
+    - group: ComandosAmarillos
+      files:
+        - file: functions.s
+        - file: functionsc.h
+        - file: verifications.h
+  components:
+    - component: ARM::CMSIS:CORE
+    - component: Keil::Device&Standalone:Startup

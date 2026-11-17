@@ -1,0 +1,13 @@
+build-gen-idx:
+  generated-by: uVision version 5.43.1.0
+  generators:
+    - board: 
+      device: STM32F303K8Tx
+      id: CubeMX
+      output: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/STM32CubeMX/K8/
+      project-type: single-core
+      cbuild-gens:
+        - cbuild-gen: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/ProyectoFinal.K8.cbuild-gen.yml
+          configuration: .K8
+          name: C:/Users/marti/OneDrive/Desktop/Martin/Proyectos/ProyectoFinal/STM32CubeMX/K8/ProyectoFinal.cgen.yml
+          project: ProyectoFinal
