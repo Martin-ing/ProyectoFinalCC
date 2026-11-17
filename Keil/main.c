@@ -16,7 +16,9 @@ enum {
     RELOJ_SUBIDA_TICK = 1,
     UART_RX_CAPACIDAD = 256,
     UART_TX_CAPACIDAD = 2048,
-    EVENTOS_CAPACIDAD = 32
+    EVENTOS_CAPACIDAD = 32,
+    CHAT_EVENTO_CAMPOS = 26,
+    CHAT_SIN_CRC_PHY = 256
 };
 
 volatile uint8_t lado = PHY_LADO;
@@ -404,7 +406,7 @@ static char *Poner_Numero(char *puntero, uint32_t valor)
 
 static void Chat_Enviar_Campos(char tipo, const uint32_t campos[], size_t n)
 {
-    char linea[256];
+    char linea[3 + 11 * CHAT_EVENTO_CAMPOS];
     char *p = linea;
     *p++ = '@';
     *p++ = tipo;
@@ -433,7 +435,8 @@ static void Chat_Enviar_Estado(void)
         CHAT_VERSION, lado_activo, PHY_Mapa_TX(&enlace), enlace.mapa_rx, enlace.reloj_rx,
         reloj_periodo_rx_ms, reloj_ancho_rx_ms, phy_rx_simbolo_actual, enlace.bloques_rx_ok,
         enlace.tramas_rx_ok, enlace.errores, enlace.reenvios_phy, enlace.reenvios_trama,
-        enlace.falla, enlace.ticket_tx, enlace.estado_envio, eventos_perdidos, reloj_ms
+        0U, /* Campo reservado del estado publicado por versiones previas. */
+        enlace.ticket_tx, enlace.estado_envio, eventos_perdidos, reloj_ms
     };
     Restaurar_IRQ(previo);
     Chat_Enviar_Campos('H', campos, sizeof campos / sizeof campos[0]);
@@ -460,14 +463,13 @@ static void Chat_Procesar_Comando(ChatComAccion accion, const ChatComDatos *dato
         const bool duplicado = enlace.ticket_tx == datos->ticket;
         const bool aceptado = !duplicado && PHY_Encolar(&enlace, datos->ticket, datos->control, datos->bytes, datos->longitud);
         const PhyEstadoEnvio estado = enlace.estado_envio;
-        const PhyMotivo falla = enlace.falla;
         Restaurar_IRQ(previo);
         if (aceptado || (duplicado && estado == PHY_ENVIO_ENCOLADO)) {
             Chat_Enviar_Campos('Q', &datos->ticket, 1);
         } else if (duplicado && estado == PHY_ENVIO_ENTREGADO) {
             Chat_Enviar_Campos('K', &datos->ticket, 1);
         } else {
-            Chat_Enviar_Error(datos->ticket, falla ? (uint32_t)falla : CHAT_ERR_OCUPADO);
+            Chat_Enviar_Error(datos->ticket, CHAT_ERR_OCUPADO);
         }
     }
 }
@@ -539,15 +541,14 @@ static void Chat_Enviar_Evento(void)
     Restaurar_IRQ(previo);
     if (ev.tipo == PHY_EV_ENTREGADO) {
         Chat_Enviar_Campos('K', &ev.ticket, 1);
-    } else if (ev.tipo == PHY_EV_FALLA) {
-        Chat_Enviar_Error(ev.ticket, ev.motivo);
     }
-    const uint32_t campos[] = {
+    const uint32_t campos[CHAT_EVENTO_CAMPOS] = {
         ev.ms, ev.tipo, ev.ticket, ev.bloque.tipo, ev.bloque.id, ev.bloque.mapa,
         ev.retorno.pedir, ev.retorno.siguiente, ev.retorno.mapa, ev.ciclo, ev.valor,
         ev.trama.control, ev.trama.dato, ev.trama.ack, ev.trama.seq,
         (ev.trama.inicio ? 1U : 0U) | (ev.trama.fin ? 2U : 0U),
-        ev.trama.crc_recibido, ev.trama.crc_calculado, ev.motivo, ev.resultado, ev.orden
+        ev.trama.crc_recibido, ev.trama.crc_calculado, ev.motivo, ev.resultado, ev.orden,
+        ev.bits_retorno, ev.bits_cabecera, CHAT_SIN_CRC_PHY, ev.ancho_ms, ev.periodo_ms
     };
     Chat_Enviar_Campos('G', campos, sizeof campos / sizeof campos[0]);
 }

@@ -29,12 +29,6 @@ uint8_t PHY_CRC8(uint8_t control, const uint8_t bytes[], size_t longitud)
     return crc ^ variante.xor_final;
 }
 
-uint8_t PHY_CRC_Bloque(uint16_t valor)
-{
-    const uint8_t bytes[2] = {(uint8_t)((valor >> 8) & 15U), (uint8_t)valor};
-    return PHY_CRC8(0, bytes, sizeof bytes);
-}
-
 int PHY_Par_Reloj(uint32_t ancho_ms)
 {
     for (int par = 0; par <= PHY_MARCADOR; ++par) {
@@ -147,9 +141,8 @@ void PHY_Codificar_Bloque(PhyBloque *bloque, PhyRetorno retorno, PhyCabecera cab
             xor_lineas ^= bloque->simbolos[2 + i];
         }
         bloque->simbolos[14] = xor_lineas;
-        const uint8_t crc = PHY_CRC_Bloque(valor);
-        for (unsigned i = 0; i < 4; ++i) {
-            bloque->pares[11 + i] = (crc >> (6 - 2 * i)) & 3U;
+        for (unsigned i = PHY_CICLO_CABECERA + 1U; i < PHY_CICLOS_LARGOS; ++i) {
+            bloque->pares[i] = 0U;
         }
     } else {
         for (unsigned i = 2; i <= 9; ++i) {
@@ -203,11 +196,6 @@ PhyResultado PHY_Decodificar_Bloque(const PhyBloque *bloque, uint8_t mapa, uint1
         }
         if (xor_lineas != (s[14] & mapa)) {
             return PHY_ERR_XOR;
-        }
-        const uint8_t *p = bloque->pares;
-        const uint8_t crc = (uint8_t)((p[11] << 6) | (p[12] << 4) | (p[13] << 2) | p[14]);
-        if (crc != PHY_CRC_Bloque(bits)) {
-            return PHY_ERR_CRC_BLOQUE;
         }
     }
     *valor = bits;

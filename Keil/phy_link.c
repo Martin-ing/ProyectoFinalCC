@@ -4,10 +4,8 @@
 
 enum {
     SIN_COPIA = PHY_COPIAS,
-    MAX_REENVIOS = 3,
     PLAZO_PHY_MS = 25000,
     PLAZO_TRAMA_MS = 180000,
-    PLAZO_MAPA_MS = 60000,
     PLAZO_RELOJ_MS = 1600
 };
 
@@ -34,20 +32,23 @@ static bool Debe_Pedir(const PhyEnlace *e)
     return e->retenido || (e->ids_fallidos & (1U << e->siguiente_rx)) != 0U;
 }
 
+static bool Faltan_Lineas(const PhyEnlace *e, uint8_t mapa)
+{
+    return (e->cabecera_tx.mapa & mapa) != e->cabecera_tx.mapa;
+}
+
+static uint16_t Bits_Reloj(const uint8_t pares[], uint8_t cantidad)
+{
+    uint16_t bits = 0;
+    for (uint8_t i = 0; i < cantidad; ++i) {
+        bits = (uint16_t)((bits << 2) | pares[i]);
+    }
+    return bits;
+}
+
 uint8_t PHY_Mapa_TX(const PhyEnlace *e)
 {
     return e->reloj_rx && e->retorno_valido ? e->mapa_tx : 0U;
-}
-
-static void Fallar(PhyEnlace *e, uint32_t ms, PhyMotivo motivo)
-{
-    e->falla = motivo;
-    uint32_t ticket = 0;
-    if (e->estado_envio == PHY_ENVIO_ENCOLADO) {
-        e->estado_envio = PHY_ENVIO_FALLIDO;
-        ticket = e->ticket_tx;
-    }
-    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_FALLA, .ticket = ticket, .motivo = motivo});
 }
 
 void PHY_Iniciar(PhyEnlace *e, PhyReceptor salida)
@@ -59,7 +60,7 @@ void PHY_Iniciar(PhyEnlace *e, PhyReceptor salida)
 
 bool PHY_Encolar(PhyEnlace *e, uint32_t ticket, uint8_t control, const uint8_t bytes[], uint8_t longitud)
 {
-    if (ticket == 0U || e->longitud_tx != 0U || e->falla != PHY_SIN_MOTIVO
+    if (ticket == 0U || e->longitud_tx != 0U
         || bytes == NULL || longitud == 0U || longitud > PHY_MAX_MENSAJE || (control & 0xf1U) != 0U) {
         return false;
     }
@@ -75,14 +76,9 @@ bool PHY_Encolar(PhyEnlace *e, uint32_t ticket, uint8_t control, const uint8_t b
 static void Reenviar_Trama(PhyEnlace *e, uint32_t ms, PhyMotivo motivo)
 {
     PhyDatoTx *dato = &e->dato_tx;
-    if (!dato->existe || !dato->enviado || dato->transmitiendo || dato->listo || e->falla) {
+    if (!dato->existe || !dato->enviado || dato->transmitiendo || dato->listo) {
         return;
     }
-    if (dato->reenvios == MAX_REENVIOS) {
-        Fallar(e, ms, motivo);
-        return;
-    }
-    ++dato->reenvios;
     ++e->reenvios_trama;
     dato->listo = true;
     dato->esperando = false;
@@ -92,7 +88,7 @@ static void Reenviar_Trama(PhyEnlace *e, uint32_t ms, PhyMotivo motivo)
 
 static void Confirmar_Trama(PhyEnlace *e, uint32_t ms, uint8_t ack)
 {
-    if (!e->dato_tx.existe || !e->dato_tx.enviado || Siguiente_Seq(e->seq_tx) != ack || e->falla) {
+    if (!e->dato_tx.existe || !e->dato_tx.enviado || Siguiente_Seq(e->seq_tx) != ack) {
         return;
     }
     Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_ACK_TRAMA, .ticket = e->ticket_tx,
@@ -118,7 +114,8 @@ static void Procesar_Trama(PhyEnlace *e, uint32_t ms)
             || (!trama.inicio && ((trama.control ^ e->control_rx) & PHY_CONTROL_UTF8) != 0U))) {
         resultado = PHY_ERR_ESTRUCTURA;
     }
-    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_TRAMA_RX, .trama = trama, .resultado = resultado});
+    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_TRAMA_RX, .trama = trama,
+                                 .valor = e->bloques_rx[0], .resultado = resultado});
     if (resultado != PHY_OK) {
         ++e->errores;
         if (datos && (e->bloques_rx[0] & PHY_MASCARA_SYN_SFD) == PHY_SYN_SFD) {
@@ -258,7 +255,8 @@ static void Aplicar_Retorno(PhyEnlace *e, uint32_t ms, PhyRetorno retorno)
     e->retorno_valido = true;
     e->retorno_rx = retorno;
     e->mapa_tx = retorno.mapa;
-    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_RETORNO, .retorno = retorno, .ciclo = PHY_CICLO_RETORNO});
+    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_RETORNO, .retorno = retorno, .ciclo = PHY_CICLO_RETORNO,
+                                 .bits_retorno = Bits_Reloj(&e->plan_rx.pares[1], 5)});
     if (anterior != retorno.mapa) {
         Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_MAPA_TX, .retorno = retorno});
     }
@@ -282,16 +280,19 @@ static void Aplicar_Retorno(PhyEnlace *e, uint32_t ms, PhyRetorno retorno)
         e->primero_tx = Siguiente_Id(e->primero_tx);
     }
     e->cantidad_tx -= distancia;
-    if (!retorno.pedir || e->falla) {
+    if (!retorno.pedir) {
         return;
     }
 
     PhyPendiente *pendiente = &e->ventana[retorno.siguiente];
-    const bool repitiendo = e->cabecera_tx.tipo == PHY_REPITE && e->cabecera_tx.id == retorno.siguiente
-                         && (e->ciclo_tx < e->plan_tx.ciclos || e->termina_en_bajada);
-    if (!pendiente->pedido_atendido && pendiente->motivo != PHY_PEDIDO && !repitiendo) {
+    const bool en_curso = e->ciclo_tx < e->plan_tx.ciclos || e->termina_en_bajada;
+    const bool repitiendo = en_curso && e->cabecera_tx.tipo == PHY_REPITE && e->cabecera_tx.id == retorno.siguiente;
+    const bool programar = repitiendo ? Faltan_Lineas(e, retorno.mapa) : !pendiente->pedido_atendido;
+    if (programar && pendiente->motivo != PHY_PEDIDO) {
         pendiente->motivo = PHY_PEDIDO;
-        Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_PEDIR, .retorno = retorno});
+        Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_PEDIR, .retorno = retorno,
+                                     .bloque = en_curso ? e->cabecera_tx : (PhyCabecera){0},
+                                     .ciclo = en_curso ? e->ciclo_tx : 0U});
     }
 }
 
@@ -321,6 +322,8 @@ void PHY_RX_Pulso(PhyEnlace *e, uint32_t ms, uint32_t periodo_ms, uint32_t ancho
     e->ultimo_pulso_ms = ms;
     const int par = PHY_Par_Reloj(ancho_ms);
     if (par < 0 || (periodo_ms != 0U && (periodo_ms < 950U || periodo_ms > 1050U))) {
+        Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_PULSO_INVALIDO, .resultado = PHY_ERR_CABECERA,
+                                     .ancho_ms = ancho_ms, .periodo_ms = periodo_ms});
         PHY_RX_Perder_Reloj(e, ms);
         if (par != PHY_MARCADOR) {
             return;
@@ -354,14 +357,19 @@ void PHY_RX_Pulso(PhyEnlace *e, uint32_t ms, uint32_t periodo_ms, uint32_t ancho
             Aplicar_Retorno(e, ms, retorno);
         } else {
             ++e->errores;
-            Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_RETORNO_INVALIDO, .resultado = PHY_ERR_CABECERA, .ciclo = ciclo});
+            Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_RETORNO_INVALIDO, .resultado = PHY_ERR_CABECERA,
+                                         .ciclo = ciclo, .bits_retorno = Bits_Reloj(&e->plan_rx.pares[1], 5)});
         }
     } else if (ciclo == PHY_CICLO_CABECERA) {
-        if (!PHY_Leer_Cabecera(e->plan_rx.pares, &e->cabecera_rx)) {
+        e->cabecera_rx_valida = PHY_Leer_Cabecera(e->plan_rx.pares, &e->cabecera_rx);
+        Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_CABECERA_RX, .ciclo = ciclo,
+                                     .bloque = e->cabecera_rx_valida ? e->cabecera_rx : (PhyCabecera){.id = PHY_SIN_ID},
+                                     .resultado = e->cabecera_rx_valida ? PHY_OK : PHY_ERR_CABECERA,
+                                     .bits_cabecera = Bits_Reloj(&e->plan_rx.pares[6], 5)});
+        if (!e->cabecera_rx_valida) {
             Error_Bloque(e, ms, PHY_ERR_CABECERA, PHY_SIN_MOTIVO);
             return;
         }
-        e->cabecera_rx_valida = true;
         const uint8_t mapa = e->cabecera_rx.mapa;
         if (mapa == PHY_MAPA_COMPLETO || e->cabecera_rx.tipo == PHY_IDLE) {
             Medir_Mapa(e, ms, 9);
@@ -386,6 +394,11 @@ void PHY_TX_Bajada(PhyEnlace *e, uint32_t ms)
     }
     e->termina_en_bajada = false;
     const PhyCabecera cabecera = e->cabecera_tx;
+    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_FIN_BLOQUE_TX, .bloque = cabecera,
+                                 .ciclo = e->plan_tx.ciclos - 1U});
+    if (cabecera.tipo == PHY_IDLE) {
+        return;
+    }
     PhyPendiente *pendiente = &e->ventana[cabecera.id];
     if (!pendiente->ocupado) {
         return;
@@ -402,6 +415,10 @@ void PHY_TX_Bajada(PhyEnlace *e, uint32_t ms)
         ++pendiente->reenvios;
         ++e->reenvios_phy;
         pendiente->pedido_atendido = true;
+        /* Si esta copia llegó al cierre, su pedido en curso ya se atendió. */
+        if (pendiente->motivo == PHY_PEDIDO) {
+            pendiente->motivo = PHY_SIN_MOTIVO;
+        }
     }
     pendiente->esperando = true;
     pendiente->terminado_ms = ms;
@@ -410,30 +427,10 @@ void PHY_TX_Bajada(PhyEnlace *e, uint32_t ms)
 static void Temporizadores(PhyEnlace *e, uint32_t ms)
 {
     Vigilar_Reloj(e, ms);
-    if (e->falla) {
-        return;
-    }
-
-    const bool trabajo = e->longitud_tx || e->cantidad_tx || e->copia_tx != SIN_COPIA || e->ack_pendiente || e->nack_pendiente;
-    if (PHY_Mapa_TX(e) == 0U && trabajo) {
-        if (!e->sin_mapa) {
-            e->sin_mapa = true;
-            e->sin_mapa_ms = ms;
-        } else if (ms - e->sin_mapa_ms >= PLAZO_MAPA_MS) {
-            Fallar(e, ms, PHY_SIN_MAPA);
-            return;
-        }
-    } else {
-        e->sin_mapa = false;
-    }
     for (uint8_t id = 0; id < PHY_ID_MODULO; ++id) {
         PhyPendiente *pendiente = &e->ventana[id];
         if (pendiente->ocupado && pendiente->esperando && ms - pendiente->terminado_ms >= PLAZO_PHY_MS) {
             pendiente->esperando = false;
-            if (pendiente->reenvios >= MAX_REENVIOS) {
-                Fallar(e, ms, PHY_PLAZO_BLOQUE);
-                return;
-            }
             if (pendiente->motivo == PHY_SIN_MOTIVO) {
                 pendiente->motivo = PHY_PLAZO_BLOQUE;
             }
@@ -498,7 +495,8 @@ static void Preparar_Trama_Tx(PhyEnlace *e, uint32_t ms)
     PHY_Codificar_Trama(trama, copia->bloques);
     trama.crc_calculado = (uint8_t)(((copia->bloques[1] & 15U) << 4) | (copia->bloques[2] >> 8));
     e->copia_tx = indice;
-    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_TRAMA_TX, .ticket = intento ? e->ticket_tx : 0U, .trama = trama});
+    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_TRAMA_TX, .ticket = intento ? e->ticket_tx : 0U,
+                                 .trama = trama, .valor = copia->bloques[0]});
 }
 
 static uint8_t Abrir_Bloque_Nuevo(PhyEnlace *e, uint32_t ms)
@@ -554,7 +552,7 @@ static void Elegir_Bloque(PhyEnlace *e, uint32_t ms, uint8_t pedido)
     const uint8_t mapa = PHY_Mapa_TX(e);
     PhyMotivo motivo = PHY_SIN_MOTIVO;
     uint16_t valor = 0;
-    if (mapa && !e->falla) {
+    if (mapa) {
         uint8_t id = pedido != PHY_SIN_ID ? pedido : Buscar_Reenvio(e, false);
         PhyTipo tipo = PHY_REPITE;
         if (id == PHY_SIN_ID) {
@@ -573,26 +571,33 @@ static void Elegir_Bloque(PhyEnlace *e, uint32_t ms, uint8_t pedido)
     e->ciclo_tx = 0;
     e->cabecera_tx = cabecera;
     PHY_Codificar_Bloque(&e->plan_tx, retorno, cabecera, valor);
-    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_BLOQUE_TX, .bloque = cabecera, .retorno = retorno, .valor = valor, .motivo = motivo});
+    Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_BLOQUE_TX, .bloque = cabecera, .retorno = retorno,
+                                 .valor = valor, .motivo = motivo,
+                                 .bits_retorno = Bits_Reloj(&e->plan_tx.pares[1], 5),
+                                 .bits_cabecera = Bits_Reloj(&e->plan_tx.pares[6], 5)});
 }
 
 static bool Adelantar_Marcador(PhyEnlace *e, uint32_t ms, uint8_t pedido)
 {
-    if (e->ciclo_tx <= PHY_CICLO_RETORNO || e->falla) {
+    if (e->ciclo_tx <= PHY_CICLO_RETORNO) {
         return false;
     }
     if (e->cabecera_tx.tipo == PHY_IDLE) {
-        return PHY_Mapa_TX(e) != 0U && Hay_Datos_Listos(e);
-    }
-    if (pedido == PHY_SIN_ID || (e->cabecera_tx.tipo == PHY_REPITE && e->cabecera_tx.id == pedido)) {
-        return false;
-    }
-    PhyPendiente *pendiente = &e->ventana[e->cabecera_tx.id];
-    if (pendiente->ocupado && pendiente->motivo == PHY_SIN_MOTIVO) {
-        pendiente->motivo = PHY_INTERRUMPIDO;
+        if (PHY_Mapa_TX(e) == 0U || !Hay_Datos_Listos(e)) {
+            return false;
+        }
+    } else {
+        if (pedido == PHY_SIN_ID || !Faltan_Lineas(e, e->mapa_tx)) {
+            return false;
+        }
+        PhyPendiente *pendiente = &e->ventana[e->cabecera_tx.id];
+        if (pendiente->ocupado && pendiente->motivo == PHY_SIN_MOTIVO) {
+            pendiente->motivo = PHY_INTERRUMPIDO;
+        }
     }
     Registrar(e, ms, (PhyEvento){.tipo = PHY_EV_CORTE, .bloque = e->cabecera_tx,
-                                 .retorno.siguiente = pedido, .ciclo = e->ciclo_tx});
+                                 .retorno = {pedido != PHY_SIN_ID, pedido, e->mapa_tx},
+                                 .ciclo = e->ciclo_tx});
     return true;
 }
 
@@ -604,6 +609,6 @@ PhyPulso PHY_TX_Subida(PhyEnlace *e, uint32_t ms)
         Elegir_Bloque(e, ms, pedido);
     }
     const uint8_t ciclo = e->ciclo_tx++;
-    e->termina_en_bajada = e->ciclo_tx == e->plan_tx.ciclos && e->cabecera_tx.tipo != PHY_IDLE;
+    e->termina_en_bajada = e->ciclo_tx == e->plan_tx.ciclos;
     return (PhyPulso){PHY_Ancho_Reloj(e->plan_tx.pares[ciclo]), e->plan_tx.simbolos[ciclo], ciclo};
 }

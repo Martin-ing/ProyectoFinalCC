@@ -71,9 +71,10 @@ textarea { width: 100%; min-height: 53px; max-height: 124px; resize: vertical; p
 .mediciones div:nth-child(3n) { border-right: 0; }
 .mediciones dt { color: #526b60; font-size: 11px; }
 .mediciones dd { margin-top: 2px; font-size: 14px; font-weight: 600; }
-.filtros { display: flex; align-items: center; gap: 8px; padding: 8px 16px; min-height: 47px; border-bottom: 1px solid #e7eeea; }
-.filtros label, .filtros select, .filtros span { font-size: 12px; }
-.filtros select { min-height: 30px; padding: 4px 7px; }
+.filtros { display: flex; align-items: center; flex-wrap: wrap; gap: 5px; padding: 8px 16px; min-height: 47px; border-bottom: 1px solid #e7eeea; }
+.filtros button { min-height: 29px; padding: 4px 7px; border: 1px solid transparent; background: transparent; color: #425e51; font-size: 12px; }
+.filtros button[aria-pressed="true"] { background: #e5efe8; border-color: #cbded2; color: #204d3d; font-weight: 600; }
+.eventos-omitidos { margin: 8px 16px; font-size: 12px; }
 .eventos > .vacio { margin: 15px 16px; }
 .evento { padding: 8px 16px; border-bottom: 1px solid #edf1ee; }
 .evento > div { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
@@ -82,6 +83,9 @@ textarea { width: 100%; min-height: 53px; max-height: 124px; resize: vertical; p
 .evento p { color: #425e51; margin-top: 2px; font-size: 12px; overflow-wrap: anywhere; }
 .evento-error { background: #fff3ed; }
 .evento-error strong { color: #933e2e; }
+.detalle-reloj { margin-top: 5px; color: #315d4b; font-size: 12px; }
+.detalle-reloj summary { cursor: pointer; }
+.detalle-reloj > div { margin-top: 6px; }
 
 @media (max-width: 800px) {
   .app { width: calc(100% - 26px); margin: 17px auto; }

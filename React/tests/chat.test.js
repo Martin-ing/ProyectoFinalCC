@@ -35,9 +35,48 @@ test('estado del enlace, aceptación y entrega conservan el ticket', () => {
 test('el registro muestra el CRC recibido frente al calculado', () => {
   const evento = leerRespuesta('@G,18000,10,0,0,0,0,0,0,0,0,0,0,96,0,0,3,10,39,0,7,0')
   const descripcion = describirEvento(evento)
+  assert.equal(descripcion.capa, 'Red')
   assert.equal(descripcion.error, true)
   assert.match(descripcion.detalle, /CRC SMBUS 0A\/27/)
   assert.match(descripcion.detalle, /INICIO.*FIN.*CRC de trama/)
+})
+
+test('desglosa los bits de ambas secciones del reloj y del CRC PHY', () => {
+  const evento = leerRespuesta('@G,17000,0,0,1,1,6,1,0,7,0,1776,0,0,0,0,0,0,0,0,0,0,571,312,160,0,0')
+  const log = describirEvento(evento)
+  assert.equal(log.capa, 'PHY')
+  assert.deepEqual(log.reloj[0].campos, { PEDIR: 1, SIG_RX: 0, MAPA_RX: '111', Reservado: 0 })
+  assert.deepEqual(log.reloj[0].pares, ['10', '00', '11', '10', '11'])
+  assert.deepEqual(log.reloj[0].pulsosNominalesMs, [600, 400, 700, 600, 700])
+  assert.deepEqual(log.reloj[1].campos, { TIPO: 'NUEVO', ID: 1, MAPA_TX: '110' })
+  assert.equal(log.reloj[1].paridad, '00')
+  assert.equal(log.reloj[1].paridadEsperada, '00')
+  assert.match(log.detalle, /Carga 6F0.*CRC_PHY del reloj A0/)
+
+  const actual = leerRespuesta('@G,17000,0,0,1,1,6,1,0,7,0,1776,0,0,0,0,0,0,0,0,0,0,571,312,256,0,0')
+  assert.equal(actual.crcPhyReloj, null)
+  assert.deepEqual(describirEvento(actual).reloj, log.reloj)
+  assert.doesNotMatch(describirEvento(actual).detalle, /CRC_PHY/)
+
+  const retorno = leerRespuesta('@G,5700,3,0,0,0,0,0,0,0,5,0,0,0,0,0,0,0,0,0,1,0,570,0,0,0,0')
+  const invalido = describirEvento(retorno)
+  assert.equal(invalido.error, true)
+  assert.equal(invalido.reloj[0].paridad, '10')
+  assert.equal(invalido.reloj[0].paridadEsperada, '11')
+})
+
+test('distingue el fin, el corte PHY y las cabeceras de trama de red', () => {
+  const corte = leerRespuesta('@G,23000,5,0,1,1,7,1,0,6,6,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0')
+  assert.match(describirEvento(corte).detalle, /Bloque #1.*111 → 110.*ID prioritario #0/)
+  const fin = leerRespuesta('@G,38000,16,0,2,0,6,0,0,0,14,0,0,0,0,0,0,0,0,0,0,0,0,0,160,0,0')
+  assert.equal(describirEvento(fin).nombre, 'Fin de bloque TX')
+  assert.match(describirEvento(fin).detalle, /REPITE #0.*ciclo 14.*A0/)
+
+  const trama = leerRespuesta('@G,39000,10,0,0,0,0,0,0,0,0,994,8,97,0,0,3,136,136,0,0,0,0,0,0,0,0')
+  const red = describirEvento(trama)
+  assert.equal(red.capa, 'Red')
+  assert.equal(red.error, false)
+  assert.match(red.detalle, /SYN 001.*SFD 111.*CONTROL 1000.*DATA 61.*CRC SMBUS 88\/88/)
 })
 
 test('recupera mensajes serie partidos o después de ruido', () => {

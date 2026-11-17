@@ -82,48 +82,105 @@ export function leerRespuesta(linea) {
   if (tipo === '@E' && args.length === 2) {
     return { tipo: 'fallido', ticket: numero(args[0]), motivo: numero(args[1]) }
   }
-  if (tipo === '@G' && args.length === 21) {
+  if (tipo === '@G' && (args.length === 21 || args.length === 26)) {
     const [ms, codigo, ticket, bloque, id, mapa, pedir, siguiente, retornoMapa, ciclo,
       valor, control, dato, ack, seq, banderas, crcRecibido, crcCalculado,
-      motivo, resultado, orden] = args.map(numero)
-    return { tipo: 'log', ms, codigo, ticket, bloque, id, mapa, pedir, siguiente, retornoMapa,
+      motivo, resultado, orden, bitsRetorno, bitsCabecera, crcPhyReloj, anchoMs, periodoMs] = args.map(numero)
+    const evento = { tipo: 'log', ms, codigo, ticket, bloque, id, mapa, pedir, siguiente, retornoMapa,
       ciclo, valor, control, dato, ack, seq, banderas, crcRecibido, crcCalculado, motivo, resultado, orden }
+    if (args.length === 21) return evento
+    if (bitsRetorno > 1023 || bitsCabecera > 1023 || crcPhyReloj > 256) {
+      throw new Error('Campos del reloj inválidos en el registro serie.')
+    }
+    return {
+      ...evento,
+      bitsRetorno: [0, 2, 3].includes(codigo) ? bitsRetorno : null,
+      bitsCabecera: [0, 17].includes(codigo) ? bitsCabecera : null,
+      crcPhyReloj: [0, 1, 6, 16].includes(codigo) && crcPhyReloj < 256 ? crcPhyReloj : null,
+      anchoMs: codigo === 18 ? anchoMs : null,
+      periodoMs: codigo === 18 ? periodoMs : null,
+    }
   }
   return null
 }
 
 const EVENTOS = [
-  ['Bloque TX', 'PHY'], ['Bloque RX', 'PHY'], ['Cabecera RX', 'PHY'],
-  ['Cabecera RX inválida', 'PHY'], ['PEDIR recibido', 'PHY'], ['Corte TX', 'PHY'],
+  ['Inicio de bloque TX', 'PHY'], ['Bloque RX validado', 'PHY'], ['Retorno RX', 'PHY'],
+  ['Retorno RX inválido', 'PHY'], ['PEDIR recibido', 'PHY'], ['Corte TX', 'PHY'],
   ['Bloque descartado', 'PHY'], ['Mapa RX', 'PHY'], ['Mapa TX', 'PHY'],
-  ['Trama TX', 'Enlace'], ['Trama RX', 'Enlace'], ['Reenvío de trama', 'Enlace'],
-  ['ACK de trama', 'Enlace'], ['Mensaje entregado', 'Enlace'], ['Fallo de enlace', 'Enlace'],
-  ['ACK PHY', 'PHY'],
+  ['Trama TX', 'Red'], ['Trama RX', 'Red'], ['Reenvío de trama', 'Red'],
+  ['ACK de trama', 'Red'], ['Mensaje entregado', 'Red'], ['Fallo de enlace', 'Red'],
+  ['ACK PHY', 'PHY'], ['Fin de bloque TX', 'PHY'], ['Cabecera de bloque RX', 'PHY'],
+  ['Pulso RX inválido', 'PHY'],
 ]
 
+function seccionReloj(valor, retorno) {
+  const pares = [8, 6, 4, 2, 0].map(desplazamiento => (valor >> desplazamiento) & 3)
+  const [b0, b1, b2, b3, paridad] = pares
+  const binario = n => n.toString(2).padStart(2, '0')
+  const campos = valor >> 2
+  return {
+    nombre: retorno ? 'Retorno · ciclos 1 a 5' : 'Bloque · ciclos 6 a 10',
+    campos: retorno
+      ? { PEDIR: campos >> 7, SIG_RX: (campos >> 4) & 7, MAPA_RX: bits(campos >> 1), Reservado: campos & 1 }
+      : { TIPO: TIPOS[campos >> 6] ?? 'RESERVADO', ID: (campos >> 3) & 7, MAPA_TX: bits(campos) },
+    pares: pares.map(binario),
+    paridad: binario(paridad),
+    paridadEsperada: binario(b0 ^ b1 ^ b2 ^ b3),
+    pulsosNominalesMs: pares.map(par => 400 + 100 * par),
+  }
+}
+
+function nombreBloque(ev) {
+  const tipo = TIPOS[ev.bloque] ?? '?'
+  return ev.bloque ? tipo + ' #' + ev.id + ' · MAPA_TX ' + bits(ev.mapa) : tipo + ' · MAPA_TX 000'
+}
+
 export function describirEvento(ev) {
-  const [nombre, capa] = EVENTOS[ev.codigo] ?? ['Evento', 'PHY']
+  let [nombre, capa] = EVENTOS[ev.codigo] ?? ['Evento', 'PHY']
+  if (ev.codigo === 14 && [3, 6].includes(ev.motivo)) capa = 'PHY'
+  if (ev.codigo === 6 && ev.motivo === 8) nombre = 'Marcador anticipado RX'
   const error = (ev.resultado !== 0 && ev.motivo !== 8) || ev.codigo === 14
+  const extendido = ev.bitsRetorno !== undefined
+  const reloj = []
+  if (ev.bitsRetorno != null) reloj.push(seccionReloj(ev.bitsRetorno, true))
+  if (ev.bitsCabecera != null) reloj.push(seccionReloj(ev.bitsCabecera, false))
   let detalle = ''
   switch (ev.codigo) {
     case 0:
     case 1: {
-      const bloque = TIPOS[ev.bloque] ?? '?'
-      const pedido = ev.pedir ? ' · PEDIR' : ''
-      const carga = ev.bloque ? ' #' + ev.id + ' · MAPA_TX ' + bits(ev.mapa) + ' · ' + hex(ev.valor, 3) : ''
+      const carga = ev.bloque ? ' · Carga ' + hex(ev.valor, 3) : ''
       const orden = ev.codigo === 1 ? ['', ' · retenido', ' · duplicado o fuera de ventana'][ev.orden] ?? '' : ''
       const motivo = ev.motivo ? ' · ' + ERRORES[ev.motivo] : ''
-      detalle = bloque + carga + ' · SIG_RX ' + ev.siguiente + ' · MAPA_RX ' + bits(ev.retornoMapa) + pedido + orden + motivo
+      const retorno = ev.codigo === 0 ? ' · PEDIR ' + ev.pedir + ' · SIG_RX ' + ev.siguiente +
+        ' · MAPA_RX ' + bits(ev.retornoMapa) : ' · ciclo ' + ev.ciclo
+      detalle = nombreBloque(ev) + carga + retorno + orden + motivo
       break
     }
     case 2:
-    case 4:
+      detalle = 'PEDIR ' + ev.pedir + ' · SIG_RX ' + ev.siguiente + ' · MAPA_RX ' + bits(ev.retornoMapa)
+      break
+    case 3:
+      detalle = 'Sección de retorno descartada · ciclo ' + ev.ciclo
+      break
+    case 4: {
+      detalle = 'ID pedido #' + ev.siguiente + ' · MAPA_RX ' + bits(ev.retornoMapa)
+      if (extendido && ev.bloque) {
+        detalle += (ev.mapa & ev.retornoMapa) === ev.mapa ? ' · termina bloque #' + ev.id
+          : ' · faltan líneas del bloque #' + ev.id
+      }
+      break
+    }
     case 15:
-      detalle = (ev.codigo === 15 ? '#' + ev.id + ' · ' : '') + 'SIG_RX ' + ev.siguiente +
-        ' · MAPA_RX ' + bits(ev.retornoMapa) + (ev.pedir ? ' · PEDIR' : '')
+      detalle = '#' + ev.id + ' · SIG_RX ' + ev.siguiente + ' · MAPA_RX ' + bits(ev.retornoMapa)
       break
     case 5:
-      detalle = 'Bloque #' + ev.id + ' · ciclo ' + ev.ciclo + ' · reenvío prioritario #' + ev.siguiente
+      detalle = (ev.bloque ? 'Bloque #' + ev.id : 'IDLE') + ' · antes del ciclo ' + ev.ciclo
+      if (extendido && ev.bloque) {
+        detalle += ' · pérdida de línea ' + bits(ev.mapa) + ' → ' + bits(ev.retornoMapa)
+      }
+      detalle += ev.siguiente < 6 ? ' · ID prioritario #' + ev.siguiente : ' · datos listos'
+      if (extendido && ev.retornoMapa === 0) detalle += ' · espera en IDLE'
       break
     case 7:
     case 8:
@@ -135,7 +192,9 @@ export function describirEvento(ev) {
       const tipo = esControl ? (ev.control & 8 ? 'NACK' : 'ACK') : (ev.control & 8 ? 'UTF-8' : 'ISO-8859-1')
       const crc = CRC[(ev.control >> 1) & 3] + ' ' +
         (ev.codigo === 10 ? hex(ev.crcRecibido) + '/' : '') + hex(ev.crcCalculado)
-      detalle = tipo + ' · SEQ ' + ev.seq + ' · ACK ' + ev.ack + ' · DATA ' + hex(ev.dato) + ' · CRC ' + crc +
+      const cabecera = extendido ? ' · SYN ' + bits(ev.valor >> 9) + ' · SFD ' + bits(ev.valor >> 6) +
+        ' · CONTROL ' + ev.control.toString(2).padStart(4, '0') : ''
+      detalle = tipo + cabecera + ' · SEQ ' + ev.seq + ' · ACK ' + ev.ack + ' · DATA ' + hex(ev.dato) + ' · CRC ' + crc +
         (ev.banderas & 1 ? ' · INICIO' : '') + (ev.banderas & 2 ? ' · FIN' : '') +
         (ev.resultado ? ' · ' + RESULTADOS[ev.resultado] : '')
       break
@@ -149,11 +208,23 @@ export function describirEvento(ev) {
     case 13:
       detalle = 'Envío ' + ev.ticket
       break
+    case 16:
+      detalle = nombreBloque(ev) + ' · última bajada en ciclo ' + ev.ciclo
+      break
+    case 17:
+      detalle = (ev.resultado ? 'Sección de bloque descartada' : nombreBloque(ev)) + ' · ciclo ' + ev.ciclo
+      break
+    case 18:
+      detalle = 'Pulso en alto ' + ev.anchoMs + ' ms'
+        + (ev.periodoMs ? ' · período ' + ev.periodoMs + ' ms' : '')
+      break
     default:
       detalle = [
         ev.codigo === 6 && ev.id < 6 ? 'Bloque #' + ev.id : '',
         ERRORES[ev.motivo], RESULTADOS[ev.resultado],
+        ev.codigo === 6 ? 'ciclo ' + ev.ciclo : '',
       ].filter(Boolean).join(' · ')
   }
-  return { nombre, capa, error, detalle }
+  if (ev.crcPhyReloj != null) detalle += ' · CRC_PHY del reloj ' + hex(ev.crcPhyReloj)
+  return { nombre, capa, error, detalle, ...(reloj.length ? { reloj } : {}) }
 }

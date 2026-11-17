@@ -9,19 +9,20 @@ typedef enum {
     PHY_EV_BLOQUE_TX, PHY_EV_BLOQUE_RX, PHY_EV_RETORNO, PHY_EV_RETORNO_INVALIDO,
     PHY_EV_PEDIR, PHY_EV_CORTE, PHY_EV_ERROR_BLOQUE, PHY_EV_MAPA_RX, PHY_EV_MAPA_TX,
     PHY_EV_TRAMA_TX, PHY_EV_TRAMA_RX, PHY_EV_REENVIO_TRAMA, PHY_EV_ACK_TRAMA,
-    PHY_EV_ENTREGADO, PHY_EV_FALLA, PHY_EV_ACK_PHY
+    PHY_EV_ENTREGADO, PHY_EV_ACK_PHY = 15,
+    PHY_EV_FIN_BLOQUE_TX, PHY_EV_CABECERA_RX, PHY_EV_PULSO_INVALIDO
 } PhyTipoEvento;
 
 typedef enum {
     PHY_SIN_MOTIVO, PHY_PEDIDO, PHY_INTERRUMPIDO, PHY_PLAZO_BLOQUE, PHY_NACK,
-    PHY_PLAZO_TRAMA, PHY_SIN_MAPA, PHY_RELOJ, PHY_MARCADOR_ANTICIPADO
+    PHY_PLAZO_TRAMA, PHY_RELOJ = 7, PHY_MARCADOR_ANTICIPADO
 } PhyMotivo;
 
-typedef enum { PHY_ENVIO_NINGUNO, PHY_ENVIO_ENCOLADO, PHY_ENVIO_ENTREGADO, PHY_ENVIO_FALLIDO } PhyEstadoEnvio;
+typedef enum { PHY_ENVIO_NINGUNO, PHY_ENVIO_ENCOLADO, PHY_ENVIO_ENTREGADO } PhyEstadoEnvio;
 typedef enum { PHY_RX_EN_ORDEN, PHY_RX_RETENIDO, PHY_RX_FUERA_DE_VENTANA } PhyOrdenRx;
 
 typedef struct {
-    uint32_t ms, ticket;
+    uint32_t ms, ticket, ancho_ms, periodo_ms;
     PhyTipoEvento tipo;
     PhyCabecera bloque;
     PhyRetorno retorno;
@@ -29,6 +30,7 @@ typedef struct {
     PhyResultado resultado;
     PhyMotivo motivo;
     uint16_t valor;
+    uint16_t bits_retorno, bits_cabecera;
     uint8_t ciclo;
     PhyOrdenRx orden;
 } PhyEvento;
@@ -41,9 +43,9 @@ typedef struct {
 
 typedef struct {
     bool ocupado, terminado, esperando, pedido_atendido;
-    uint8_t copia, reenvios;
+    uint8_t copia;
     uint16_t valor;
-    uint32_t terminado_ms;
+    uint32_t terminado_ms, reenvios;
     PhyMotivo motivo;
 } PhyPendiente;
 
@@ -56,7 +58,6 @@ typedef struct {
 
 typedef struct {
     bool existe, listo, transmitiendo, enviado, esperando;
-    uint8_t reenvios;
     uint32_t intento, confirmado_phy_ms;
 } PhyDatoTx;
 
@@ -89,9 +90,6 @@ typedef struct {
     uint32_t ticket_tx;
     PhyEstadoEnvio estado_envio;
     uint8_t bytes_rx[PHY_MAX_MENSAJE], longitud_rx, control_rx;
-    bool sin_mapa;
-    uint32_t sin_mapa_ms;
-    PhyMotivo falla;
     uint32_t bloques_rx_ok, tramas_rx_ok, errores, reenvios_phy, reenvios_trama;
 } PhyEnlace;
 

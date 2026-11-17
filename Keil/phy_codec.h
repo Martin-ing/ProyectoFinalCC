@@ -26,7 +26,7 @@ typedef enum { PHY_IDLE, PHY_NUEVO, PHY_REPITE } PhyTipo;
 
 typedef enum {
     PHY_OK, PHY_ERR_CABECERA, PHY_ERR_PILOTOS, PHY_ERR_PARIDAD,
-    PHY_ERR_XOR, PHY_ERR_CRC_BLOQUE, PHY_ERR_ESTRUCTURA, PHY_ERR_CRC_TRAMA
+    PHY_ERR_XOR, PHY_ERR_ESTRUCTURA = 6, PHY_ERR_CRC_TRAMA
 } PhyResultado;
 
 typedef struct {
@@ -54,7 +54,6 @@ typedef struct {
 } PhyTrama;
 
 uint8_t PHY_CRC8(uint8_t control, const uint8_t bytes[], size_t longitud);
-uint8_t PHY_CRC_Bloque(uint16_t valor);
 int PHY_Par_Reloj(uint32_t ancho_ms);
 uint16_t PHY_Ancho_Reloj(uint8_t par);
 uint8_t PHY_Mapa_Pilotos(uint8_t bajo, uint8_t alto);

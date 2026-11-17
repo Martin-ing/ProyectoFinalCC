@@ -10,6 +10,7 @@ const ETIQUETAS_ENVIO = {
   fallido: 'Falló', sin_confirmar: 'Sin confirmar',
 }
 const MAX_LOGS = 5000
+const FILTROS = [['todos', 'Todos'], ['PHY', 'Capa física'], ['Red', 'Capa de red'], ['errores', 'Errores']]
 
 function Mapa({ nombre, mascara }) {
   return <div className="mapa">
@@ -18,11 +19,13 @@ function Mapa({ nombre, mascara }) {
   </div>
 }
 
-function descargarLogs(logs) {
+function descargarLogs(logs, filtro) {
   const url = URL.createObjectURL(new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = 'registro-phy.json'
+  const lado = logs[0]?.lado
+  const sufijo = lado && logs.every(ev => ev.lado === lado) ? '-lado-' + lado : ''
+  link.download = 'registro' + sufijo + '-' + filtro.toLowerCase() + '.json'
   link.click()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
@@ -36,10 +39,10 @@ function Registro({ logs, placa }) {
     <header className="panel-cabecera">
       <div>
         <h2 id="titulo-registro">Monitor del enlace</h2>
-        <p>{logs.length} {logs.length === 1 ? 'evento' : 'eventos'}</p>
+        <p>{visibles.length} {visibles.length === 1 ? 'evento' : 'eventos'}</p>
       </div>
-      <button className="boton boton-neutro" onClick={() => descargarLogs(logs)} disabled={!logs.length}>
-        Descargar registro
+      <button className="boton boton-neutro" onClick={() => descargarLogs(visibles, filtro)} disabled={!visibles.length}>
+        Descargar vista
       </button>
     </header>
     <dl className="mediciones">
@@ -50,21 +53,26 @@ function Registro({ logs, placa }) {
       <div><dt>Reenvíos PHY</dt><dd>{placa?.repitePhy ?? '·'}</dd></div>
       <div><dt>Reenvíos de trama</dt><dd>{placa?.repiteTrama ?? '·'}</dd></div>
     </dl>
-    <div className="filtros">
-      <label htmlFor="filtro">Eventos</label>
-      <select id="filtro" value={filtro} onChange={evt => setFiltro(evt.target.value)}>
-        <option value="todos">Todos</option>
-        <option value="PHY">Capa física</option>
-        <option value="Enlace">Enlace</option>
-        <option value="errores">Errores</option>
-      </select>
-      {placa?.logsPerdidos > 0 && <span className="texto-error">{placa.logsPerdidos} registros omitidos</span>}
+    <div className="filtros" role="group" aria-label="Filtrar registros">
+      {FILTROS.map(([clave, etiqueta]) => <button key={clave} type="button"
+        aria-pressed={filtro === clave} onClick={() => setFiltro(clave)}>{etiqueta}</button>)}
     </div>
+    {placa?.logsPerdidos > 0 && <p className="eventos-omitidos texto-error">{placa.logsPerdidos} registros omitidos</p>}
     <div className="eventos">
       {!visibles.length && <p className="vacio">Sin eventos en esta vista.</p>}
       {[...visibles].reverse().map(ev => <article key={ev.uid} className={ev.error ? 'evento evento-error' : 'evento'}>
         <div><strong>{ev.nombre}</strong><time>{(ev.ms / 1000).toFixed(3)} s</time></div>
         {ev.detalle && <p>{ev.detalle}</p>}
+        {ev.reloj && <details className="detalle-reloj">
+          <summary>Bits del reloj</summary>
+          {ev.codigo === 0 && <p>Marcador · ciclo 0 · 800 ms nominales</p>}
+          {ev.reloj.map(seccion => <div key={seccion.nombre}>
+            <strong>{seccion.nombre}</strong>
+            <p>{Object.entries(seccion.campos).map(([campo, valor]) => campo + ' ' + valor).join(' · ')}</p>
+            <p><code>{seccion.pares.join(' ')}</code> · paridad {seccion.paridad} / {seccion.paridadEsperada} esperada</p>
+            <p>Pulsos nominales {seccion.pulsosNominalesMs.join(', ')} ms</p>
+          </div>)}
+        </details>}
       </article>)}
     </div>
   </section>
